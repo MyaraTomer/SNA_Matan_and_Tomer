@@ -47,6 +47,22 @@ npm run dev
 ### 4. Open Browser
 Navigate to **http://localhost:5173**
 
+### Windows / Git Bash
+- **If `python3 -m venv venv` gives "Permission denied"**: stop any running backend (Ctrl+C in the terminal where uvicorn is running), then remove the venv and recreate:
+  ```bash
+  cd backend
+  rm -rf venv
+  python3 -m venv venv
+  ```
+- **Activate the venv**: on Windows the script is under `Scripts`, not `bin`:
+  ```bash
+  source venv/Scripts/activate
+  ```
+- **Run the backend** (from `backend` with venv activated):
+  ```bash
+  uvicorn app.main:app --reload --port 8000
+  ```
+
 ## Project Structure
 ```
 SNA/

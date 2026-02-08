@@ -15,9 +15,13 @@ if [ ! -d "venv" ]; then
     echo "✓ Virtual environment created"
 fi
 
-# Activate venv
+# Activate venv (Windows: Scripts/activate, Linux/Mac: bin/activate)
 echo "Activating virtual environment..."
-source venv/bin/activate
+if [ -f "venv/Scripts/activate" ]; then
+    source venv/Scripts/activate
+else
+    source venv/bin/activate
+fi
 
 # Check if packages are installed
 if ! python -c "import fastapi" 2>/dev/null; then
@@ -28,8 +32,8 @@ fi
 
 echo ""
 echo "Starting FastAPI server..."
-echo "API will be available at: http://localhost:8000"
+echo "API will be available at: http://localhost:8012"
 echo "Press Ctrl+C to stop the server"
 echo ""
 
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8012

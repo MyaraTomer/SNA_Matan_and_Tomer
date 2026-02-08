@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import DraggableContainer from './DraggableContainer'
 import './InterestList.css'
 
-function InterestList({ data, disabledGroups, hideIrrelevant, aggregateNames, onNodeClick }) {
+function InterestList({ data, disabledGroups, aggregateNames, onNodeClick }) {
   const [activeFilter, setActiveFilter] = useState(null)
   
   // Calculate scores for nodes based on their connections
@@ -103,8 +103,6 @@ function InterestList({ data, disabledGroups, hideIrrelevant, aggregateNames, on
     nodesToScore.forEach(node => {
       // Skip if group is disabled
       if (disabledGroups.has(node.group)) return
-      // Skip if irrelevant and hiding irrelevant
-      if (hideIrrelevant && !node.relevant) return
       
       scoreMap[node.id] = {
         id: node.id,
@@ -157,7 +155,7 @@ function InterestList({ data, disabledGroups, hideIrrelevant, aggregateNames, on
     console.log(`✓ Calculated scores for ${result.length} nodes`)
     return result.slice(0, 15) // Top 15
     
-  }, [data, disabledGroups, hideIrrelevant, aggregateNames, activeFilter])
+  }, [data, disabledGroups, aggregateNames, activeFilter])
   
   const handleFilterClick = (groupName) => {
     console.log(`Interest filter: ${groupName}`)

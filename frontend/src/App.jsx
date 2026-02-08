@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import NetworkGraph from './components/NetworkGraph'
 import Legend from './components/Legend'
 import InterestList from './components/InterestList'
 import SearchBox from './components/SearchBox'
 import FilterPanel from './components/FilterPanel'
+import DataFilterPanel from './components/DataFilterPanel'
 import Toast from './components/Toast'
 import LoadingOverlay from './components/LoadingOverlay'
+import { applyDataFilters, DEFAULT_FILTERS } from './utils/dataFilters'
 import './App.css'
 
 function App() {
@@ -16,11 +18,27 @@ function App() {
   
   // UI state
   const [disabledGroups, setDisabledGroups] = useState(new Set())
-  const [hideIrrelevant, setHideIrrelevant] = useState(false)
   const [aggregateNames, setAggregateNames] = useState(false)
   const [physicsEnabled, setPhysicsEnabled] = useState(true)
   const [toastMessage, setToastMessage] = useState('')
   const [selectedNode, setSelectedNode] = useState(null)
+  const [highlightWords, setHighlightWords] = useState([]) // keywords to highlight in connections
+  const [dataFilters, setDataFilters] = useState({ ...DEFAULT_FILTERS })
+  const [dataFilterPanelOpen, setDataFilterPanelOpen] = useState(false)
+
+  // Apply min connections / weight / keyword filters to get data for graph, legend, list, search
+  const filteredData = useMemo(
+    () => (networkData ? applyDataFilters(networkData, dataFilters) : null),
+    [networkData, dataFilters]
+  )
+  // Legend: only groups that have at least one node in filtered data
+  const legendGroups = useMemo(() => {
+    if (!filteredData?.groups || !filteredData?.nodes?.length) return filteredData?.groups ?? {}
+    const present = new Set(filteredData.nodes.map((n) => n.group))
+    return Object.fromEntries(
+      Object.entries(filteredData.groups).filter(([name]) => present.has(name))
+    )
+  }, [filteredData])
   
   // Load network data on mount
   useEffect(() => {
@@ -119,39 +137,46 @@ function App() {
   return (
     <div className="app">
       <NetworkGraph 
-        data={networkData}
+        data={filteredData}
         disabledGroups={disabledGroups}
-        hideIrrelevant={hideIrrelevant}
         aggregateNames={aggregateNames}
         physicsEnabled={physicsEnabled}
         selectedNode={selectedNode}
         setSelectedNode={setSelectedNode}
+        highlightWords={highlightWords}
         showToast={showToast}
       />
       
       <Legend 
-        groups={networkData.groups}
+        groups={legendGroups}
         disabledGroups={disabledGroups}
         toggleGroup={toggleGroup}
       />
       
       <InterestList 
-        data={networkData}
+        data={filteredData}
         disabledGroups={disabledGroups}
-        hideIrrelevant={hideIrrelevant}
         aggregateNames={aggregateNames}
         onNodeClick={setSelectedNode}
       />
-      
+
       <SearchBox 
-        data={networkData}
+        data={filteredData}
         aggregateNames={aggregateNames}
         onNodeSelect={setSelectedNode}
+        onHighlightWords={setHighlightWords}
+        highlightWords={highlightWords}
       />
-      
+
+      <DataFilterPanel
+        filters={dataFilters}
+        onFiltersChange={setDataFilters}
+        isOpen={dataFilterPanelOpen}
+        onOpenChange={setDataFilterPanelOpen}
+        groups={networkData?.groups ?? {}}
+      />
+
       <FilterPanel 
-        hideIrrelevant={hideIrrelevant}
-        setHideIrrelevant={setHideIrrelevant}
         aggregateNames={aggregateNames}
         setAggregateNames={setAggregateNames}
         physicsEnabled={physicsEnabled}

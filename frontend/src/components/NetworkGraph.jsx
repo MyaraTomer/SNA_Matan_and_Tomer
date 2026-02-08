@@ -1,15 +1,46 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Network } from 'vis-network'
 import './NetworkGraph.css'
 
-function NetworkGraph({ 
-  data, 
-  disabledGroups, 
-  hideIrrelevant, 
+function toVisNode(node) {
+  return {
+    id: node.id,
+    label: node.label,
+    title: node.name !== 'Unknown' ? `${node.name}\nPSTN: ${node.id}` : `Unknown\nPSTN: ${node.id}`,
+    color: node.color,
+    size: node.size,
+    shape: 'dot',
+    font: { size: 14, face: 'Inter' },
+    nodeName: node.name,
+    nodeGroup: node.group,
+    relevant: node.relevant
+  }
+}
+
+function toVisEdge(edge) {
+  return {
+    id: edge.id,
+    from: edge.source,
+    to: edge.target,
+    color: edge.color,
+    title: edge.words ? `Calls: ${edge.weight}\nWords: ${edge.words}` : `Calls: ${edge.weight}`,
+    width: Math.log(edge.weight + 1) * 1.5,
+    value: edge.weight,
+    smooth: false,
+    originalWeight: edge.weight,
+    vectorWords: edge.words || '',
+    hasVector: edge.has_vector
+  }
+}
+
+function NetworkGraph({
+  data,
+  disabledGroups,
   aggregateNames,
   physicsEnabled,
   selectedNode,
   setSelectedNode,
+  highlightWords = [],
   showToast
 }) {
   const containerRef = useRef(null)
@@ -18,57 +49,131 @@ function NetworkGraph({
   const originalStylesRef = useRef({ nodes: new Map(), edges: new Map() })
   const allNodesRef = useRef([])
   const allEdgesRef = useRef([])
-  
+
+  // Compute display data once: either raw or pre-aggregated. This avoids creating the
+  // network with full data and then mutating it (which caused ghost nodes when clearing filters).
+  const displayData = useMemo(() => {
+    if (!data || !data.nodes || !data.edges) return null
+    const nodes = data.nodes.map(toVisNode)
+    const edges = data.edges.map(toVisEdge)
+    if (!aggregateNames) return { nodes, edges }
+
+    const nameGroups = {}
+    nodes.forEach((node) => {
+      const name = node.nodeName || 'Unknown'
+      if (!nameGroups[name]) nameGroups[name] = []
+      nameGroups[name].push(node)
+    })
+    const pstnToPrimary = {}
+    Object.entries(nameGroups).forEach(([name, groupNodes]) => {
+      if (name === 'Unknown') {
+        groupNodes.forEach((n) => { pstnToPrimary[n.id] = n.id })
+      } else if (groupNodes.length > 1) {
+        const primaryId = groupNodes[0].id
+        groupNodes.forEach((n) => { pstnToPrimary[n.id] = primaryId })
+      } else {
+        pstnToPrimary[groupNodes[0].id] = groupNodes[0].id
+      }
+    })
+
+    const nodesToShow = []
+    const nodesToHide = []
+    const edgesToRemove = new Set()
+    const edgesToAdd = []
+
+    Object.entries(nameGroups).forEach(([name, groupNodes]) => {
+      if (name === 'Unknown') {
+        groupNodes.forEach((n) => nodesToShow.push(n))
+        return
+      }
+      if (groupNodes.length === 1) {
+        nodesToShow.push(groupNodes[0])
+        return
+      }
+      const primary = groupNodes[0]
+      const groupIdSet = new Set(groupNodes.map((n) => n.id))
+      groupNodes.slice(1).forEach((n) => nodesToHide.push(n.id))
+      nodesToShow.push({
+        ...primary,
+        label: name,
+        title: `${name}\nPSTNs: ${groupIdSet.size > 0 ? [...groupIdSet].join(', ') : primary.id}`,
+        size: 25,
+        borderWidth: 3,
+        shadow: true,
+        font: { size: 16, bold: true, face: 'Inter' }
+      })
+
+      const targetMap = new Map()
+      edges.forEach((edge) => {
+        const isSourceInGroup = groupIdSet.has(edge.from)
+        const isTargetInGroup = groupIdSet.has(edge.to)
+        if (isSourceInGroup && isTargetInGroup) {
+          edgesToRemove.add(edge.id)
+          return
+        }
+        if (isSourceInGroup || isTargetInGroup) {
+          const externalNode = isSourceInGroup ? edge.to : edge.from
+          const externalPrimary = pstnToPrimary[externalNode] || externalNode
+          if (!targetMap.has(externalPrimary)) {
+            targetMap.set(externalPrimary, { weight: 0, words: [], hasVector: false, color: '#ced4da' })
+          }
+          const agg = targetMap.get(externalPrimary)
+          agg.weight += edge.originalWeight || 1
+          if (edge.vectorWords && edge.vectorWords.length > 0) {
+            agg.words.push(edge.vectorWords)
+            agg.hasVector = true
+            agg.color = '#e63946'
+          }
+          edgesToRemove.add(edge.id)
+        }
+      })
+      targetMap.forEach((agg, targetPrimary) => {
+        if (targetPrimary === primary.id) return
+        const w = Math.max(1, Math.min(Math.sqrt(agg.weight) * 2, 15))
+        const tooltip = agg.words.length > 0
+          ? `Calls: ${agg.weight}\nWords: ${agg.words.join(' | ')}`
+          : `Calls: ${agg.weight}`
+        edgesToAdd.push({
+          id: `agg_${primary.id}_${targetPrimary}`,
+          from: primary.id,
+          to: targetPrimary,
+          color: agg.color,
+          width: w,
+          value: agg.weight,
+          title: tooltip,
+          smooth: false,
+          originalWeight: agg.weight,
+          vectorWords: agg.words.join(' | '),
+          hasVector: agg.hasVector
+        })
+      })
+    })
+
+    const remainingEdges = edges.filter((edge) => {
+      if (edgesToRemove.has(edge.id)) return false
+      if (nodesToHide.includes(edge.from) || nodesToHide.includes(edge.to)) return false
+      return true
+    })
+    const visibleIds = new Set(nodesToShow.map((n) => n.id))
+    const safeRemaining = remainingEdges.filter((e) => visibleIds.has(e.from) && visibleIds.has(e.to))
+    const displayEdges = [...safeRemaining, ...edgesToAdd]
+    return { nodes: nodesToShow, edges: displayEdges }
+  }, [data, aggregateNames])
+
   useEffect(() => {
-    if (!data || !containerRef.current) return
-    
+    if (!displayData || !containerRef.current) return
+
     console.log('-'.repeat(60))
     console.log('INITIALIZING NETWORK GRAPH')
     console.log('-'.repeat(60))
-    
-    // Prepare nodes data
-    const nodes = data.nodes.map(node => ({
-      id: node.id,
-      label: node.label,
-      title: node.name !== 'Unknown' 
-        ? `${node.name}\nPSTN: ${node.id}`
-        : `Unknown\nPSTN: ${node.id}`,
-      color: node.color,
-      size: node.size,
-      shape: 'dot',
-      font: { size: 14, face: 'Inter' },
-      // Store metadata
-      nodeName: node.name,
-      nodeGroup: node.group,
-      relevant: node.relevant
-    }))
-    
-    // Prepare edges data
-    const edges = data.edges.map(edge => ({
-      id: edge.id,
-      from: edge.source,
-      to: edge.target,
-      color: edge.color,
-      title: edge.words 
-        ? `Calls: ${edge.weight}\nWords: ${edge.words}`
-        : `Calls: ${edge.weight}`,
-      width: Math.log(edge.weight + 1) * 1.5,
-      value: edge.weight,
-      smooth: false,
-      // Store metadata
-      originalWeight: edge.weight,
-      vectorWords: edge.words || '',
-      hasVector: edge.has_vector
-    }))
-    
-    // Store original data for aggregation
+
+    const { nodes, edges } = displayData
     allNodesRef.current = nodes
     allEdgesRef.current = edges
-    
-    // Create network
+
     const networkData = {
-      nodes: nodes,
-      edges: edges
+      nodes,
+      edges
     }
     
     const options = {
@@ -204,290 +309,149 @@ function NetworkGraph({
         })
       }
     })
+
+    const displayIds = new Set(nodes.map((n) => n.id))
+    if (selectedNode && !displayIds.has(selectedNode)) {
+      setSelectedNode(null)
+    }
     
     return () => {
       if (networkRef.current) {
         networkRef.current.destroy()
       }
-      // Clean up tooltip
       const tooltipDiv = document.getElementById('network-tooltip')
       if (tooltipDiv) {
         tooltipDiv.style.display = 'none'
       }
     }
-  }, [data])
-  
-  // Handle aggregation
-  useEffect(() => {
-    if (!networkRef.current || !data) return
-    
-    console.log('-'.repeat(60))
-    console.log('APPLYING AGGREGATION')
-    console.log(`  Aggregate names: ${aggregateNames}`)
-    console.log('-'.repeat(60))
-    
-    if (aggregateNames) {
-      // Group nodes by name
-      const nameGroups = {}
-      allNodesRef.current.forEach(node => {
-        const name = node.nodeName || 'Unknown'
-        if (!nameGroups[name]) nameGroups[name] = []
-        nameGroups[name].push(node)
-      })
-      
-      const nodesToShow = []
-      const nodesToHide = []
-      const edgesToAdd = []
-      const edgesToRemove = []
-      
-      // Build mapping: PSTN -> Primary PSTN for aggregated nodes
-      const pstnToPrimary = {}
-      Object.entries(nameGroups).forEach(([name, nodes]) => {
-        if (name === 'Unknown') {
-          // Unknown nodes always map to themselves (never aggregate)
-          nodes.forEach(node => {
-            pstnToPrimary[node.id] = node.id
-          })
-        } else if (nodes.length > 1) {
-          // Multiple nodes with same name - map all to primary
-          const primaryId = nodes[0].id
-          nodes.forEach(node => {
-            pstnToPrimary[node.id] = primaryId
-          })
-        } else {
-          // Single node maps to itself
-          pstnToPrimary[nodes[0].id] = nodes[0].id
-        }
-      })
-      
-      // Build a set of all nodes that will be hidden
-      const allHiddenNodes = new Set()
-      Object.entries(nameGroups).forEach(([name, nodes]) => {
-        // Only aggregate nodes with actual names (not Unknown) that have duplicates
-        if (name !== 'Unknown' && nodes.length > 1) {
-          nodes.slice(1).forEach(node => allHiddenNodes.add(node.id))
-        }
-      })
-      
-      Object.entries(nameGroups).forEach(([name, nodes]) => {
-        if (name === 'Unknown') {
-          // Unknown nodes - NEVER aggregate, show all of them individually
-          console.log(`  Keeping ${nodes.length} unknown nodes separate`)
-          nodes.forEach(node => nodesToShow.push(node))
-        } else if (nodes.length === 1) {
-          // Single node with a name - show as is
-          nodesToShow.push(nodes[0])
-        } else {
-          // Multiple nodes with same name - aggregate
-          console.log(`  Aggregating ${nodes.length} nodes for name: ${name}`)
-          console.log(`    PSTNs: ${nodes.map(n => n.id).join(', ')}`)
-          
-          const primary = nodes[0]
-          const groupIds = nodes.map(n => n.id)
-          const groupIdSet = new Set(groupIds)
-          
-          // Update primary node
-          nodesToShow.push({
-            ...primary,
-            label: name,
-            title: `${name}\nPSTNs: ${groupIds.join(', ')}`,
-            size: 25,
-            borderWidth: 3,
-            shadow: true,
-            font: { size: 16, bold: true, face: 'Inter' }
-          })
-          
-          // Hide other nodes
-          nodes.slice(1).forEach(node => {
-            nodesToHide.push(node.id)
-          })
-          
-          // Aggregate edges - combine all connections from any PSTN in this group
-          const targetMap = new Map()
-          
-          allEdgesRef.current.forEach(edge => {
-            const isSourceInGroup = groupIdSet.has(edge.from)
-            const isTargetInGroup = groupIdSet.has(edge.to)
-            
-            // Internal edge (both ends in same group) - remove it
-            if (isSourceInGroup && isTargetInGroup) {
-              edgesToRemove.push(edge.id)
-              console.log(`    Removing internal edge: ${edge.from} → ${edge.to}`)
-              return
-            }
-            
-            // External edge (one end in group, other outside)
-            if (isSourceInGroup || isTargetInGroup) {
-              // Find the external node (the one NOT in this group)
-              const externalNode = isSourceInGroup ? edge.to : edge.from
-              
-              // Map external node to its primary (in case it's also aggregated)
-              const externalPrimary = pstnToPrimary[externalNode] || externalNode
-              
-              // Initialize aggregation data for this external node if needed
-              if (!targetMap.has(externalPrimary)) {
-                targetMap.set(externalPrimary, {
-                  weight: 0,
-                  words: [],
-                  hasVector: false,
-                  color: '#ced4da'
-                })
-              }
-              
-              // Add this edge's data to the aggregation
-              const aggData = targetMap.get(externalPrimary)
-              aggData.weight += edge.originalWeight || 1
-              
-              if (edge.vectorWords && edge.vectorWords.length > 0) {
-                aggData.words.push(edge.vectorWords)
-                aggData.hasVector = true
-                aggData.color = '#e63946'
-              }
-              
-              // Mark this edge for removal (will be replaced by aggregated edge)
-              edgesToRemove.push(edge.id)
-            }
-          })
-          
-          // Create new aggregated edges from primary node to all external nodes
-          console.log(`    Creating ${targetMap.size} aggregated edges`)
-          targetMap.forEach((aggData, targetPrimary) => {
-            // Skip if we're trying to create an edge to ourselves
-            if (targetPrimary === primary.id) {
-              console.log(`    Skipping self-loop to ${targetPrimary}`)
-              return
-            }
-            
-            const combinedWords = aggData.words.join(' | ')
-            const tooltip = aggData.words.length > 0
-              ? `Calls: ${aggData.weight}\nWords: ${combinedWords}`
-              : `Calls: ${aggData.weight}`
-            
-            // Get the name of the target for logging
-            const targetNode = allNodesRef.current.find(n => n.id === targetPrimary)
-            const targetName = targetNode ? targetNode.nodeName : targetPrimary
-            
-            // Better scaling for aggregated edges: use square root for better visual representation
-            // This makes higher weights more visibly thicker while keeping it reasonable
-            const edgeWidth = Math.max(1, Math.min(Math.sqrt(aggData.weight) * 2, 15))
-            
-            console.log(`      ${name} (${primary.id}) → ${targetName} (${targetPrimary}) [weight: ${aggData.weight}, width: ${edgeWidth.toFixed(1)}]`)
-            
-            edgesToAdd.push({
-              id: `agg_${primary.id}_${targetPrimary}`,
-              from: primary.id,
-              to: targetPrimary,
-              color: aggData.color,
-              width: edgeWidth,
-              value: aggData.weight,
-              title: tooltip,
-              smooth: false,
-              originalWeight: aggData.weight,
-              vectorWords: combinedWords,
-              hasVector: aggData.hasVector
-            })
-          })
-        }
-      })
-      
-      // Apply changes to network
-      console.log(`  Total nodes to show: ${nodesToShow.length}`)
-      console.log(`  Total nodes to hide: ${nodesToHide.length}`)
-      console.log(`  Total edges to remove: ${edgesToRemove.length}`)
-      console.log(`  Total aggregated edges to add: ${edgesToAdd.length}`)
-      
-      networkRef.current.body.data.nodes.clear()
-      networkRef.current.body.data.nodes.add(nodesToShow)
-      
-      networkRef.current.body.data.edges.clear()
-      
-      // Add edges that don't involve hidden nodes and weren't marked for removal
-      const remainingEdges = allEdgesRef.current.filter(edge => {
-        const isRemoving = edgesToRemove.includes(edge.id)
-        const hasHiddenSource = nodesToHide.includes(edge.from)
-        const hasHiddenTarget = nodesToHide.includes(edge.to)
-        return !isRemoving && !hasHiddenSource && !hasHiddenTarget
-      })
-      
-      console.log(`  Remaining edges: ${remainingEdges.length}`)
-      
-      // Add all edges (remaining + aggregated)
-      const allEdges = [...remainingEdges, ...edgesToAdd]
-      networkRef.current.body.data.edges.add(allEdges)
-      
-      console.log(`✓ Aggregation complete: ${nodesToShow.length} visible nodes, ${remainingEdges.length + edgesToAdd.length} total edges`)
-      console.log(`  Aggregated edges sample:`, edgesToAdd.slice(0, 3).map(e => ({
-        from: e.from,
-        to: e.to,
-        weight: e.originalWeight,
-        width: e.width
-      })))
-      
-    } else {
-      // Restore original nodes and edges
-      console.log('  Restoring original nodes and edges')
-      networkRef.current.body.data.nodes.clear()
-      networkRef.current.body.data.nodes.add(allNodesRef.current)
-      
-      networkRef.current.body.data.edges.clear()
-      networkRef.current.body.data.edges.add(allEdgesRef.current)
-      
-      console.log('✓ Original graph restored')
-    }
-    
-  }, [aggregateNames, data])
-  
+  }, [displayData])
+
   // Handle filters (groups, relevance)
   useEffect(() => {
-    if (!networkRef.current || !data) return
+    if (!networkRef.current || !displayData) return
     
     console.log('-'.repeat(60))
     console.log('APPLYING FILTERS')
     console.log(`  Disabled groups: ${Array.from(disabledGroups).join(', ') || 'none'}`)
-    console.log(`  Hide irrelevant: ${hideIrrelevant}`)
     console.log('-'.repeat(60))
-    
+
     const allNodes = networkRef.current.body.data.nodes.get()
-    
-    // Apply visibility filters
-    const updates = allNodes.map(node => {
-      const groupDisabled = disabledGroups.has(node.nodeGroup)
-      const relevanceDisabled = hideIrrelevant && !node.relevant
-      
-      return {
-        id: node.id,
-        hidden: groupDisabled || relevanceDisabled
-      }
-    })
+
+    const updates = allNodes.map((node) => ({
+      id: node.id,
+      hidden: disabledGroups.has(node.nodeGroup)
+    }))
     
     networkRef.current.body.data.nodes.update(updates)
     console.log('✓ Filters applied')
     
-  }, [disabledGroups, hideIrrelevant, data])
+  }, [disabledGroups, displayData])
   
   // Handle physics toggle
   useEffect(() => {
     if (!networkRef.current) return
-    
     console.log(`Physics: ${physicsEnabled ? 'enabled' : 'disabled'}`)
-    networkRef.current.setOptions({ 
-      physics: { enabled: physicsEnabled } 
-    })
+    networkRef.current.setOptions({ physics: { enabled: physicsEnabled } })
   }, [physicsEnabled])
   
-  // Handle node selection/highlighting
+  // Handle node selection / keyword highlighting
   useEffect(() => {
-    if (!networkRef.current || !data) return
-    
-    if (selectedNode) {
-      console.log(`Highlighting node: ${selectedNode}`)
+    if (!networkRef.current || !displayData) return
+
+    const words = Array.isArray(highlightWords) ? highlightWords.filter(Boolean) : []
+    if (words.length > 0) {
+      highlightByWords(words)
+    } else if (selectedNode) {
       highlightNode(selectedNode)
     } else {
-      console.log('Unhighlighting all nodes')
       forceUnhighlightAll()
     }
-  }, [selectedNode, data])
-  
+  }, [selectedNode, highlightWords, displayData])
+
+  const highlightByWords = (words) => {
+    if (!networkRef.current) return
+    forceUnhighlightAll()
+    const allNodes = networkRef.current.body.data.nodes.get()
+    const allEdges = networkRef.current.body.data.edges.get()
+    const terms = words.map((w) => String(w).trim().toLowerCase()).filter(Boolean)
+    if (!terms.length) return
+
+    // Only red edges (with connection words) can match; gray edges have no words and must not be highlighted
+    const matchingEdgeIds = []
+    const matchingNodeIds = new Set()
+    allEdges.forEach((edge) => {
+      const wordsText = (edge.vectorWords || '').trim()
+      if (!wordsText) return // gray edges have no vectorWords – do not match
+      const text = wordsText.toLowerCase()
+      if (terms.some((t) => text.includes(t))) {
+        matchingEdgeIds.push(edge.id)
+        matchingNodeIds.add(edge.from)
+        matchingNodeIds.add(edge.to)
+      }
+    })
+
+    originalStylesRef.current.nodes.clear()
+    originalStylesRef.current.edges.clear()
+    allNodes.forEach((n) => {
+      if (!n.hidden) {
+        originalStylesRef.current.nodes.set(n.id, {
+          color: n.color,
+          opacity: n.opacity || 1,
+          size: n.size || 20,
+          borderWidth: n.borderWidth || 1,
+          font: n.font
+        })
+      }
+    })
+    allEdges.forEach((e) => {
+      originalStylesRef.current.edges.set(e.id, {
+        color: e.color,
+        width: e.width || 1,
+        opacity: e.opacity || 1
+      })
+    })
+
+    const nodeUpdates = allNodes
+      .filter((n) => !n.hidden)
+      .map((node) => {
+        if (matchingNodeIds.has(node.id)) {
+          return { id: node.id, opacity: 1 }
+        }
+        return {
+          id: node.id,
+          opacity: 0.15,
+          color: {
+            background: typeof node.color === 'string' ? node.color : node.color.background,
+            border: typeof node.color === 'string' ? node.color : node.color.border
+          }
+        }
+      })
+    networkRef.current.body.data.nodes.update(nodeUpdates)
+
+    const edgeUpdates = allEdges.map((edge) => {
+      if (matchingEdgeIds.includes(edge.id)) {
+        const edgeColor = edge.hasVector ? '#e63946' : '#ced4da'
+        return {
+          id: edge.id,
+          width: (edge.width || 1) * 2.5,
+          color: edgeColor,
+          shadow: {
+            enabled: true,
+            color: edge.hasVector ? 'rgba(230, 57, 70, 0.5)' : 'rgba(206, 212, 218, 0.5)',
+            size: 10
+          }
+        }
+      }
+      return {
+        id: edge.id,
+        color: { color: edge.color, opacity: 0.08 },
+        width: (edge.width || 1) * 0.5
+      }
+    })
+    networkRef.current.body.data.edges.update(edgeUpdates)
+    setHighlightActive(true)
+  }
+
   const highlightNode = (nodeId) => {
     if (!networkRef.current) return
     

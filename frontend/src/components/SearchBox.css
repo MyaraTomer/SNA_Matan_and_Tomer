@@ -171,3 +171,9 @@
 .suggestion-item:last-child {
   border-bottom: none;
 }
+
+.suggestion-item-keywords {
+  border-top: 1px dashed #dee2e6;
+  color: #7209B7;
+  font-size: 12px;
+}
