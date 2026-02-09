@@ -37,6 +37,3 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 
-# Old code
-main.py
-sna_network*.html
