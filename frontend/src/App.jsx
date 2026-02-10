@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
+import ProjectSelector from './components/ProjectSelector'
+import LandingPage from './components/LandingPage'
 import NetworkGraph from './components/NetworkGraph'
 import Legend from './components/Legend'
 import InterestList from './components/InterestList'
@@ -11,9 +13,14 @@ import { applyDataFilters, DEFAULT_FILTERS } from './utils/dataFilters'
 import './App.css'
 
 function App() {
+  // App state
+  const [currentView, setCurrentView] = useState('project-selection') // 'project-selection', 'landing', 'network'
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [currentSearch, setCurrentSearch] = useState(null)
+  
   // Data state
   const [networkData, setNetworkData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   
   // UI state
@@ -40,25 +47,63 @@ function App() {
     )
   }, [filteredData])
   
-  // Load network data on mount
+  // Check for stored project on mount
   useEffect(() => {
-    console.log('='.repeat(60))
-    console.log('APP INITIALIZING')
-    console.log('='.repeat(60))
-    
-    fetchNetworkData()
+    const storedProjectId = localStorage.getItem('sna_current_project_id')
+    if (storedProjectId) {
+      // Auto-load last project
+      fetch(`/api/projects`)
+        .then(res => res.json())
+        .then(projects => {
+          const project = projects.find(p => p.id === parseInt(storedProjectId))
+          if (project) {
+            handleProjectSelect(project)
+          }
+        })
+        .catch(err => console.error('Failed to load stored project:', err))
+    }
   }, [])
   
-  const fetchNetworkData = async () => {
+  const handleProjectSelect = (project) => {
+    console.log('Project selected:', project)
+    setSelectedProject(project)
+    localStorage.setItem('sna_current_project_id', project.id)
+    setCurrentView('landing')
+  }
+
+  const handleChangeProject = () => {
+    setCurrentView('project-selection')
+    setSelectedProject(null)
+    setCurrentSearch(null)
+    setNetworkData(null)
+  }
+
+  const handleSearchStart = async (searchData) => {
+    console.log('Search started:', searchData)
+    setCurrentSearch(searchData)
+    setLoading(true)
+    setError(null)
+    setCurrentView('network')
+
     try {
-      console.log('Fetching network data from API...')
-      const response = await fetch('/api/network')
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      let data
+      if (searchData.isHistory) {
+        // Load existing search from history
+        const response = await fetch(`/api/searches/${searchData.historyId}`)
+        if (!response.ok) {
+          throw new Error('Failed to load search')
+        }
+        const result = await response.json()
+        data = result.data  // API returns 'data' not 'network_data'
+      } else {
+        // New search was already created, use the returned data
+        data = searchData.data  // API returns 'data' not 'network_data'
       }
-      
-      const data = await response.json()
+
+      if (!data || !data.nodes || !data.edges) {
+        throw new Error('Invalid network data received')
+      }
+
       console.log('✓ Network data loaded successfully')
       console.log(`  Nodes: ${data.nodes.length}`)
       console.log(`  Edges: ${data.edges.length}`)
@@ -70,7 +115,15 @@ function App() {
       console.error('✗ Error loading network data:', err)
       setError(err.message)
       setLoading(false)
+      // Go back to landing on error
+      setCurrentView('landing')
     }
+  }
+
+  const handleBackToLanding = () => {
+    setCurrentView('landing')
+    setNetworkData(null)
+    setCurrentSearch(null)
   }
   
   const showToast = (message) => {
@@ -94,6 +147,23 @@ function App() {
     })
   }
   
+  // Show project selector
+  if (currentView === 'project-selection') {
+    return <ProjectSelector onProjectSelect={handleProjectSelect} />
+  }
+
+  // Show landing page
+  if (currentView === 'landing') {
+    return (
+      <LandingPage
+        project={selectedProject}
+        onSearchStart={handleSearchStart}
+        onChangeProject={handleChangeProject}
+      />
+    )
+  }
+
+  // Network view - show loading/error states
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -109,7 +179,22 @@ function App() {
         <h2 style={{ color: '#e63946', marginBottom: '10px' }}>Error Loading Data</h2>
         <p style={{ color: '#666', marginBottom: '20px' }}>{error}</p>
         <button 
-          onClick={fetchNetworkData}
+          onClick={handleBackToLanding}
+          style={{
+            padding: '10px 20px',
+            background: '#4361EE',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: '600',
+            marginRight: '10px'
+          }}
+        >
+          Back to Landing
+        </button>
+        <button 
+          onClick={() => handleSearchStart(currentSearch)}
           style={{
             padding: '10px 20px',
             background: '#4361EE',
@@ -122,20 +207,50 @@ function App() {
         >
           Retry
         </button>
-        <div style={{ marginTop: '30px', padding: '20px', background: '#f8f9fa', borderRadius: '8px', maxWidth: '600px' }}>
-          <h3>Troubleshooting:</h3>
-          <ul style={{ textAlign: 'left', marginTop: '10px' }}>
-            <li>Make sure the backend server is running (port 8000)</li>
-            <li>Ensure Excel files exist in the data/ folder</li>
-            <li>Check backend logs for errors</li>
-          </ul>
-        </div>
       </div>
     )
   }
   
+  if (!filteredData) {
+    return <div>No data available</div>
+  }
+
+  // Network visualization view
   return (
     <div className="app">
+      <div className="app-header" style={{ 
+        padding: '1rem 2rem', 
+        background: 'white', 
+        borderBottom: '2px solid #e1e8ed',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <button 
+          onClick={handleBackToLanding}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#667eea',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: '600'
+          }}
+        >
+          ← Back to Landing
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ color: '#657786', fontSize: '0.9rem' }}>
+            {selectedProject?.name}
+          </div>
+          {currentSearch?.name && (
+            <div style={{ color: '#2c3e50', fontWeight: '600' }}>
+              {currentSearch.name}
+            </div>
+          )}
+        </div>
+      </div>
       <NetworkGraph 
         data={filteredData}
         disabledGroups={disabledGroups}

@@ -1,0 +1,163 @@
+.history-loading,
+.history-error,
+.history-empty {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #657786;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e1e8ed;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.history-error p {
+  color: #c33;
+  margin-bottom: 1rem;
+}
+
+.btn-retry {
+  padding: 0.75rem 1.5rem;
+  background-color: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.btn-retry:hover {
+  background-color: #5568d3;
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.history-empty h3 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.history-list {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e1e8ed;
+}
+
+.history-header h2 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.btn-refresh {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  transition: transform 0.2s;
+}
+
+.btn-refresh:hover {
+  transform: rotate(90deg);
+}
+
+.history-items {
+  display: grid;
+  gap: 1rem;
+}
+
+.history-item {
+  background: #f7f9fa;
+  border: 2px solid #e1e8ed;
+  border-radius: 8px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+  transform: translateY(-2px);
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.history-name {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.25rem;
+  flex: 1;
+}
+
+.history-time {
+  font-size: 0.875rem;
+  color: #657786;
+  white-space: nowrap;
+}
+
+.history-metadata {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.metadata-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.metadata-label {
+  color: #657786;
+  min-width: 90px;
+}
+
+.metadata-value {
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.btn-open {
+  padding: 0.5rem 1.5rem;
+  background-color: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.btn-open:hover {
+  background-color: #5568d3;
+}

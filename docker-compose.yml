@@ -1,0 +1,144 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sna-postgres
+    environment:
+      POSTGRES_DB: sna_db
+      POSTGRES_USER: sna_user
+      POSTGRES_PASSWORD: sna_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db-service/src/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sna_user -d sna_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sna-network
+
+  # DB Service
+  db-service:
+    build:
+      context: ./backend/db-service
+      dockerfile: Dockerfile
+    container_name: sna-db-service
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: sna_db
+      POSTGRES_USER: sna_user
+      POSTGRES_PASSWORD: sna_password
+      SERVICE_PORT: 8002
+      SERVICE_HOST: 0.0.0.0
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sna-network
+
+  # Flow Service (Mock)
+  flow-service:
+    build:
+      context: ./backend/flow-service
+      dockerfile: Dockerfile
+    container_name: sna-flow-service
+    environment:
+      SERVICE_PORT: 8003
+      SERVICE_HOST: 0.0.0.0
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sna-network
+
+  # Nodes Service
+  nodes-service:
+    build:
+      context: ./backend/nodes-service
+      dockerfile: Dockerfile
+    container_name: sna-nodes-service
+    environment:
+      SERVICE_PORT: 8001
+      SERVICE_HOST: 0.0.0.0
+      DB_SERVICE_URL: http://db-service:8002
+      FLOW_SERVICE_URL: http://flow-service:8003
+    ports:
+      - "8001:8001"
+    depends_on:
+      db-service:
+        condition: service_healthy
+      flow-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sna-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: sna-api-gateway
+    environment:
+      SERVICE_PORT: 8000
+      SERVICE_HOST: 0.0.0.0
+      NODES_SERVICE_URL: http://nodes-service:8001
+    ports:
+      - "8000:8000"
+    depends_on:
+      nodes-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sna-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sna-frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+    volumes:
+      - ./frontend/src:/app/src  # Hot reload in development
+    networks:
+      - sna-network
+
+volumes:
+  postgres_data:
+
+networks:
+  sna-network:
+    driver: bridge

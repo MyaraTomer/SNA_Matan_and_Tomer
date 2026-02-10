@@ -1,9 +1,28 @@
 # Social Network Analysis (SNA) Application
 
-## Overview
-A full-stack application for visualizing and analyzing phone call network data.
+## ⚠️ **NEW MICROSERVICES ARCHITECTURE**
 
-**🚀 Quick Start:** See [SETUP.md](SETUP.md) for detailed setup instructions.
+This project has been migrated to a microservices architecture!
+
+**📚 Documentation:**
+- **[NEW_SETUP.md](NEW_SETUP.md)** - Setup instructions for new architecture
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and flows
+- **[API_CONTRACTS.md](API_CONTRACTS.md)** - API documentation
+- **[MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)** - Old vs New comparison
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - What's completed and what's next
+
+---
+
+## Overview
+A full-stack microservices application for visualizing and analyzing phone call network data.
+
+**🚀 Quick Start (New Architecture):**
+```bash
+docker-compose up --build
+```
+Then open http://localhost:5173
+
+**📖 Old Setup:** See [SETUP.md](SETUP.md) for original monolithic setup (archived)
 
 ## Tech Stack
 - **Frontend**: React + Vite + vis-network
