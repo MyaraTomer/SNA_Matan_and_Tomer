@@ -16,115 +16,71 @@ This project has been migrated to a microservices architecture!
 ## Overview
 A full-stack microservices application for visualizing and analyzing phone call network data.
 
-**🚀 Quick Start (New Architecture):**
+## 🚀 Quick Start
+
+### Option 1: Docker (Recommended for Production)
 ```bash
 docker-compose up --build
 ```
 Then open http://localhost:5173
 
+### Option 2: Local Development (No Docker)
+```bash
+# First time setup
+./setup_local.sh
+
+# Start all services
+./run_local.sh
+```
+Then open http://localhost:5173
+
+📖 **See [LOCAL_SETUP.md](LOCAL_SETUP.md) for detailed local setup instructions**
+
 **📖 Old Setup:** See [SETUP.md](SETUP.md) for original monolithic setup (archived)
 
 ## Tech Stack
 - **Frontend**: React + Vite + vis-network
-- **Backend**: FastAPI + NetworkX
-- **Data Storage**: Excel files (will migrate to PostgreSQL later)
+- **Backend**: FastAPI (Microservices)
+- **Database**: PostgreSQL
+- **Deployment**: Docker Compose
 
-## Quick Start
+## Microservices Architecture
 
-### 1. Create Sample Data
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cd ..
-python create_sample_data.py
+```
+Frontend (5173)
+    ↓
+API Gateway (8000) ← Entry point
+    ↓
+Nodes Service (8001) ← Business logic
+    ↓         ↓
+DB Service  Flow Service
+  (8002)      (8003)
+    ↓
+PostgreSQL (5432)
 ```
 
-### 2. Start Backend
-```bash
-./start_backend.sh
-```
-Or manually:
-```bash
-cd backend
-source venv/bin/activate
-uvicorn app.main:app --reload --port 8000
-```
-
-### 3. Start Frontend (in a new terminal)
-```bash
-./start_frontend.sh
-```
-Or manually:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### 4. Open Browser
-Navigate to **http://localhost:5173**
-
-### Windows / Git Bash
-- **If `python3 -m venv venv` gives "Permission denied"**: stop any running backend (Ctrl+C in the terminal where uvicorn is running), then remove the venv and recreate:
-  ```bash
-  cd backend
-  rm -rf venv
-  python3 -m venv venv
-  ```
-- **Activate the venv**: on Windows the script is under `Scripts`, not `bin`:
-  ```bash
-  source venv/Scripts/activate
-  ```
-- **Run the backend** (from `backend` with venv activated):
-  ```bash
-  uvicorn app.main:app --reload --port 8000
-  ```
+- **API Gateway**: Pure routing layer
+- **Nodes Service**: Main business logic orchestrator
+- **DB Service**: Database operations (PostgreSQL)
+- **Flow Service**: Mock third-party API (will be replaced with real API)
+- **Frontend**: React SPA
 
 ## Project Structure
 ```
-SNA/
+SNA_Matan_and_Tomer/
 ├── backend/
-│   ├── app/
-│   │   ├── main.py          # FastAPI application
-│   │   ├── data_loader.py   # Excel data loading logic
-│   │   └── models.py        # Data models
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # React components
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   └── vite.config.js
-├── data/
-│   ├── df_sna.xlsx          # Connections: side_a, side_b, weight
-│   ├── df_vector.xlsx       # Keywords: side_a, side_b, words
-│   └── names_*.xlsx         # Names: pstn, name (grouped by filename)
+│   ├── api-gateway/         # API Gateway (Port 8000)
+│   ├── nodes-service/       # Business Logic (Port 8001)
+│   ├── db-service/          # Database Service (Port 8002)
+│   └── flow-service/        # Mock Third-party API (Port 8003)
+├── frontend/                # React SPA (Port 5173)
+├── docker-compose.yml       # Docker setup
+├── setup_local.sh          # Local setup script
+├── run_local.sh            # Start all services locally
+├── stop_local.sh           # Stop all services
+├── LOCAL_SETUP.md          # Local development guide
 └── README.md
 ```
-
-## Data Format
-
-### df_sna.xlsx
-| side_a       | side_b       | weight |
-|--------------|--------------|--------|
-| 05056109230  | 05026109230  | 4      |
-
-### df_vector.xlsx
-| side_a       | side_b       | words           |
-|--------------|--------------|-----------------|
-| 05056109230  | 05026109230  | cat, dog, log   |
-
-### names_*.xlsx (e.g., names_group_a.xlsx)
-| pstn         | name  |
-|--------------|-------|
-| 05077788899  | Lior  |
-
-**Note**: Group name is determined by filename (e.g., `names_group_a.xlsx` → "Group A")
-
 
 ## Features
 - **Network Visualization**: Interactive graph of phone connections
@@ -140,7 +96,46 @@ SNA/
   - Double click: Copy PSTN to clipboard
   - Hover: Show node details
 
-## Development Notes
-- This is a dev environment (not production-ready)
-- Excel files are read from `data/` folder on backend startup
-- Future: Will migrate to PostgreSQL with Alembic
+## Development
+
+### Running Locally (No Docker)
+See [LOCAL_SETUP.md](LOCAL_SETUP.md) for detailed instructions.
+
+### Running with Docker
+```bash
+docker-compose up --build
+```
+
+### Stopping Services
+
+**Local:**
+```bash
+./stop_local.sh
+```
+Or press `Ctrl+C` in the terminal running `run_local.sh`
+
+**Docker:**
+```bash
+docker-compose down
+```
+
+### Viewing Logs
+
+**Local:**
+```bash
+tail -f logs/*.log
+```
+
+**Docker:**
+```bash
+docker-compose logs -f [service-name]
+```
+
+## Moving to a New PC
+
+1. Clone the repository
+2. Choose your setup:
+   - **Docker**: `docker-compose up --build`
+   - **Local**: `./setup_local.sh` then `./run_local.sh`
+
+That's it!

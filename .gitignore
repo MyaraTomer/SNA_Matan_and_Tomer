@@ -37,3 +37,7 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 
+# Local development
+logs/
+.local_services.pid
+
